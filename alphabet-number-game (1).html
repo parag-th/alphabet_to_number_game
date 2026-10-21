@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Alphabet &middot; Number</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    box-sizing: border-box;
+    --bg: #14123a;
+    --bg-deep: #0d0c28;
+    --panel: #1d1a52;
+    --panel-line: #34306f;
+    --ink: #f4f2ff;
+    --muted: #a8a4d6;
+    --accent: #ffb238;
+    --accent-ink: #1d1a52;
+    --good: #4fd8a8;
+    --bad: #ff6f7d;
+    --font-display: 'Space Grotesk', 'Segoe UI', sans-serif;
+    --font-body: 'Inter', 'Segoe UI', sans-serif;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14123a; --bg-deep: #0d0c28; --panel: #1d1a52;
+      --panel-line: #34306f; --ink: #f4f2ff; --muted: #a8a4d6;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14123a; --bg-deep: #0d0c28; --panel: #1d1a52;
+    --panel-line: #34306f; --ink: #f4f2ff; --muted: #a8a4d6;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); height: 100%; }
+  * { box-sizing: border-box; }
+  body {
+    height: 100%; margin: 0; background: var(--bg);
+    background-image: radial-gradient(circle at 1px 1px, var(--panel-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+    color: var(--ink); font-family: var(--font-body);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px; overflow-x: hidden;
+  }
+  .stage { width: 100%; max-width: 480px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--panel-line);
+    border-radius: 20px; padding: 32px 28px; position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: ""; position: absolute; top: -60px; right: -60px;
+    width: 160px; height: 160px; background: var(--accent); opacity: 0.12;
+    border-radius: 40%; transform: rotate(18deg); pointer-events: none;
+  }
+
+  /* ---------- Start / mode-select screen ---------- */
+  .start-view h1 {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: clamp(28px, 6vw, 36px); line-height: 1.15; margin: 0 0 6px;
+  }
+  .start-view .range { color: var(--accent); }
+  .start-view p.lede {
+    color: var(--muted); font-size: 15px; line-height: 1.55;
+    margin: 0 0 24px; max-width: 34ch;
+  }
+
+  .mode-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 4px; }
+  .mode-btn {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    text-align: left; width: 100%; background: var(--bg-deep);
+    border: 1.5px solid var(--panel-line); border-radius: 16px;
+    padding: 16px 18px; transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+  }
+  .mode-btn:hover { border-color: var(--accent); }
+  .mode-btn:active { transform: scale(0.98); }
+  .mode-btn:focus-visible { outline: 2px solid var(--accent); }
+  .mode-btn .mode-text .mode-title {
+    display: block; font-family: var(--font-display); font-size: 17px; font-weight: 600;
+  }
+  .mode-btn .mode-text .mode-sub { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .mode-btn .mode-stats { display: flex; gap: 14px; flex-shrink: 0; }
+  .mode-btn .mode-stats .mini-stat { text-align: right; }
+  .mode-btn .mode-stats .stat-num {
+    display: block; font-family: var(--font-display); font-weight: 600; font-size: 19px; color: var(--accent);
+  }
+  .mode-btn .mode-stats .mini-stat.time .stat-num { color: var(--good); }
+  .mode-btn .mode-stats .stat-lbl { display: block; color: var(--muted); font-size: 10.5px; margin-top: 1px; }
+
+  .timer-note { color: var(--muted); font-size: 13px; margin-top: 22px; text-align: center; }
+  .timer-note b { color: var(--ink); font-weight: 600; }
+
+  button { font-family: var(--font-body); cursor: pointer; border: none; outline-offset: 3px; background: none; }
+
+  .btn-primary {
+    width: 100%; background: var(--accent); color: var(--accent-ink);
+    font-weight: 600; font-size: 17px; padding: 16px; border-radius: 14px;
+    transition: transform 120ms ease, filter 120ms ease;
+  }
+  .btn-primary:hover { filter: brightness(1.06); }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary:focus-visible { outline: 2px solid var(--ink); }
+
+  /* ---------- Game screen ---------- */
+  .game-view { display: none; }
+  .game-view.active { display: block; }
+  .start-view.hidden { display: none; }
+
+  .top-bar { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+  .metric .metric-label { color: var(--muted); font-size: 12px; }
+  .metric .metric-value { font-family: var(--font-display); font-size: 26px; font-weight: 600; }
+  .metric.right { text-align: right; }
+
+  .timer-track {
+    height: 6px; background: var(--bg-deep); border-radius: 3px; overflow: hidden; margin-bottom: 22px;
+  }
+  .timer-fill {
+    height: 100%; width: 100%; background: var(--accent); border-radius: 3px;
+    transition: width 100ms linear, background-color 200ms ease;
+  }
+  .timer-fill.urgent { background: var(--bad); }
+
+  .streak-line { color: var(--muted); font-size: 13px; margin: 0 0 18px; min-height: 18px; }
+  .streak-line b { color: var(--accent); font-weight: 600; }
+
+  .prompt-label { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+  .equation {
+    font-family: var(--font-display); font-weight: 600;
+    font-size: clamp(52px, 15vw, 72px); text-align: center; margin: 6px 0 24px; letter-spacing: 0.01em;
+  }
+
+  form.answer-form { display: flex; gap: 10px; }
+  input[type="number"], input[type="text"] {
+    flex: 1; min-width: 0; background: var(--bg-deep); border: 1.5px solid var(--panel-line);
+    border-radius: 14px; color: var(--ink); font-family: var(--font-display);
+    font-size: 22px; text-align: center; padding: 14px 10px; -moz-appearance: textfield;
+    text-transform: none;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"]:focus, input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+  .btn-check {
+    background: var(--ink); color: var(--bg-deep); font-weight: 600;
+    font-size: 16px; padding: 0 22px; border-radius: 14px;
+  }
+  .btn-check:focus-visible { outline: 2px solid var(--accent); }
+  .btn-check:disabled { opacity: 0.5; cursor: default; }
+
+  .feedback { min-height: 30px; margin-top: 18px; font-size: 15px; font-weight: 500; text-align: center; }
+  .feedback.correct { color: var(--good); }
+  .feedback.incorrect { color: var(--bad); }
+
+  .end-row { margin-top: 22px; text-align: center; }
+  .link-btn {
+    background: none; color: var(--muted); font-size: 13.5px;
+    text-decoration: underline; text-underline-offset: 3px; padding: 6px;
+  }
+  .link-btn:hover { color: var(--ink); }
+
+  /* ---------- Summary screen ---------- */
+  .summary-view { display: none; }
+  .summary-view.active { display: block; }
+  .summary-view h2 { font-family: var(--font-display); font-size: 26px; margin: 0 0 4px; }
+  .summary-view .summary-sub { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  .summary-view .new-best {
+    display: inline-block; color: var(--accent-ink); background: var(--accent);
+    font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 100px; margin-bottom: 16px;
+  }
+  .summary-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0 24px; }
+  .stat-box {
+    background: var(--bg-deep); border: 1px solid var(--panel-line);
+    border-radius: 14px; padding: 14px 16px;
+  }
+  .stat-box .stat-label { color: var(--muted); font-size: 12.5px; letter-spacing: 0.01em; }
+  .stat-box .stat-value { font-family: var(--font-display); font-size: 24px; font-weight: 600; margin-top: 2px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .card { animation: rise 320ms ease; }
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="card">
+
+    <!-- START / MODE SELECT SCREEN -->
+    <div class="start-view" id="startView">
+      <h1>Letters &amp;<br><span class="range">their numbers</span></h1>
+      <p class="lede">A=1 through Z=26. Pick a mode &mdash; every letter comes up once before the set repeats.</p>
+
+      <div class="mode-list">
+        <button type="button" class="mode-btn" id="modeA2N" data-mode="a2n">
+          <span class="mode-text">
+            <span class="mode-title">Alphabet &rarr; Number</span>
+            <span class="mode-sub">See "P", type 16</span>
+          </span>
+          <span class="mode-stats">
+            <span class="mini-stat">
+              <span class="stat-num" id="a2nHigh">0</span>
+              <span class="stat-lbl">best score</span>
+            </span>
+            <span class="mini-stat time">
+              <span class="stat-num" id="a2nBestTime">&ndash;</span>
+              <span class="stat-lbl">best time</span>
+            </span>
+          </span>
+        </button>
+        <button type="button" class="mode-btn" id="modeN2A" data-mode="n2a">
+          <span class="mode-text">
+            <span class="mode-title">Number &rarr; Alphabet</span>
+            <span class="mode-sub">See "16", type P</span>
+          </span>
+          <span class="mode-stats">
+            <span class="mini-stat">
+              <span class="stat-num" id="n2aHigh">0</span>
+              <span class="stat-lbl">best score</span>
+            </span>
+            <span class="mini-stat time">
+              <span class="stat-num" id="n2aBestTime">&ndash;</span>
+              <span class="stat-lbl">best time</span>
+            </span>
+          </span>
+        </button>
+      </div>
+
+      <div class="timer-note"><b>10 seconds</b> per question</div>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div class="game-view" id="gameView">
+      <div class="top-bar">
+        <div class="metric">
+          <div class="metric-label">Score</div>
+          <div class="metric-value" id="scoreDisplay">0</div>
+        </div>
+        <div class="metric right">
+          <div class="metric-label">High score</div>
+          <div class="metric-value" id="liveHighScore">0</div>
+        </div>
+      </div>
+
+      <div class="timer-track"><div class="timer-fill" id="timerFill"></div></div>
+
+      <div class="streak-line" id="streakLine">&nbsp;</div>
+
+      <div class="prompt-label" id="promptLabel">Letter</div>
+      <div class="equation" id="equationDisplay">P</div>
+
+      <form class="answer-form" id="answerForm" autocomplete="off">
+        <input type="number" id="numAnswerInput" inputmode="numeric" placeholder="?" aria-label="Your answer" min="1" max="26">
+        <input type="text" id="letAnswerInput" maxlength="1" placeholder="?" aria-label="Your answer" style="display:none;">
+        <button type="submit" class="btn-check" id="checkBtn">Check</button>
+      </form>
+
+      <div class="feedback" id="feedback">&nbsp;</div>
+
+      <div class="end-row">
+        <button class="link-btn" id="endBtn">End game</button>
+      </div>
+    </div>
+
+    <!-- SUMMARY SCREEN -->
+    <div class="summary-view" id="summaryView">
+      <h2 id="summaryHeading">Game over</h2>
+      <p class="summary-sub" id="summarySub">You ended the round early.</p>
+      <div style="display:flex; gap: 8px; flex-wrap: wrap;">
+        <div id="newBestBadge" style="display:none;" class="new-best">New high score</div>
+        <div id="newBestTimeBadge" style="display:none;" class="new-best">New best time</div>
+      </div>
+
+      <div class="summary-stats">
+        <div class="stat-box">
+          <div class="stat-label">Final score</div>
+          <div class="stat-value" id="finalScore">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Time taken</div>
+          <div class="stat-value" id="finalTime">&ndash;</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Correct</div>
+          <div class="stat-value" id="finalCorrect">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Incorrect</div>
+          <div class="stat-value" id="finalIncorrect">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Best streak</div>
+          <div class="stat-value" id="finalStreak">0</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Best time</div>
+          <div class="stat-value" id="finalBestTime">&ndash;</div>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="playAgainBtn">Play again</button>
+      <div class="end-row">
+        <button class="link-btn" id="changeModeBtn">Change mode</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const QUESTION_SECONDS = 10;
+  const CORRECT_POINTS = 10;
+  const INCORRECT_POINTS = -4;
+
+  const KEYS = {
+    a2n: { high: "az_a2n_highScore", streak: "az_a2n_bestStreak", time: "az_a2n_bestTimeMs" },
+    n2a: { high: "az_n2a_highScore", streak: "az_n2a_bestStreak", time: "az_n2a_bestTimeMs" }
+  };
+
+  function loadNumber(key) {
+    try {
+      const raw = localStorage.getItem(key);
+      const n = raw === null ? 0 : parseInt(raw, 10);
+      return Number.isFinite(n) ? n : 0;
+    } catch (e) { return 0; }
+  }
+  function saveNumber(key, value) {
+    try { localStorage.setItem(key, String(value)); } catch (e) { /* unavailable */ }
+  }
+
+  let highScores = { a2n: loadNumber(KEYS.a2n.high), n2a: loadNumber(KEYS.n2a.high) };
+  let bestStreaks = { a2n: loadNumber(KEYS.a2n.streak), n2a: loadNumber(KEYS.n2a.streak) };
+  let bestTimes = { a2n: loadNumber(KEYS.a2n.time), n2a: loadNumber(KEYS.n2a.time) };
+
+  function formatTime(ms) {
+    if (ms === null || ms === undefined || ms <= 0) return "\u2013";
+    const totalSeconds = ms / 1000;
+    if (totalSeconds < 60) return totalSeconds.toFixed(1) + "s";
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds - m * 60;
+    return m + ":" + (s < 10 ? "0" : "") + s.toFixed(1);
+  }
+
+  const startView = document.getElementById("startView");
+  const gameView = document.getElementById("gameView");
+  const summaryView = document.getElementById("summaryView");
+
+  const a2nHigh = document.getElementById("a2nHigh");
+  const n2aHigh = document.getElementById("n2aHigh");
+  const a2nBestTime = document.getElementById("a2nBestTime");
+  const n2aBestTime = document.getElementById("n2aBestTime");
+  const modeA2N = document.getElementById("modeA2N");
+  const modeN2A = document.getElementById("modeN2A");
+
+  const liveHighScore = document.getElementById("liveHighScore");
+  const scoreDisplay = document.getElementById("scoreDisplay");
+  const streakLine = document.getElementById("streakLine");
+  const promptLabel = document.getElementById("promptLabel");
+  const equationDisplay = document.getElementById("equationDisplay");
+  const answerForm = document.getElementById("answerForm");
+  const numAnswerInput = document.getElementById("numAnswerInput");
+  const letAnswerInput = document.getElementById("letAnswerInput");
+  const feedback = document.getElementById("feedback");
+  const checkBtn = document.getElementById("checkBtn");
+  const timerFill = document.getElementById("timerFill");
+
+  const endBtn = document.getElementById("endBtn");
+  const playAgainBtn = document.getElementById("playAgainBtn");
+  const changeModeBtn = document.getElementById("changeModeBtn");
+
+  const finalScore = document.getElementById("finalScore");
+  const finalTime = document.getElementById("finalTime");
+  const finalCorrect = document.getElementById("finalCorrect");
+  const finalIncorrect = document.getElementById("finalIncorrect");
+  const finalStreak = document.getElementById("finalStreak");
+  const finalBestTime = document.getElementById("finalBestTime");
+  const newBestBadge = document.getElementById("newBestBadge");
+  const newBestTimeBadge = document.getElementById("newBestTimeBadge");
+  const summaryHeading = document.getElementById("summaryHeading");
+  const summarySub = document.getElementById("summarySub");
+
+  let mode = "a2n";
+  let score = 0;
+  let correctCount = 0;
+  let incorrectCount = 0;
+  let streak = 0;
+  let sessionBestStreak = 0;
+  let currentPos = 1;
+  let startTime = 0;
+  let awaitingNext = false;
+  let advanceTimer = null;
+  let countdownInterval = null;
+  let timeLeft = QUESTION_SECONDS;
+
+  let questionQueue = [];
+  let queueIndex = 0;
+
+  function letterFor(pos) { return String.fromCharCode(64 + pos); } // 1 -> A
+
+  function refreshStartStats() {
+    a2nHigh.textContent = highScores.a2n;
+    n2aHigh.textContent = highScores.n2a;
+    a2nBestTime.textContent = formatTime(bestTimes.a2n);
+    n2aBestTime.textContent = formatTime(bestTimes.n2a);
+  }
+
+  function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function buildQueue() {
+    const list = [];
+    for (let p = 1; p <= 26; p++) list.push(p);
+    return shuffle(list);
+  }
+
+  function stopCountdown() {
+    if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+  }
+
+  function startCountdown() {
+    stopCountdown();
+    timeLeft = QUESTION_SECONDS;
+    timerFill.style.width = "100%";
+    timerFill.classList.remove("urgent");
+    countdownInterval = setInterval(function () {
+      timeLeft -= 0.1;
+      const pct = Math.max(0, (timeLeft / QUESTION_SECONDS) * 100);
+      timerFill.style.width = pct + "%";
+      if (timeLeft <= QUESTION_SECONDS * 0.3) timerFill.classList.add("urgent");
+      if (timeLeft <= 0) {
+        stopCountdown();
+        handleTimeout();
+      }
+    }, 100);
+  }
+
+  function activeInput() { return mode === "a2n" ? numAnswerInput : letAnswerInput; }
+
+  function newQuestion() {
+    if (queueIndex >= questionQueue.length) {
+      endGame(true);
+      return;
+    }
+    currentPos = questionQueue[queueIndex];
+    queueIndex += 1;
+
+    if (mode === "a2n") {
+      promptLabel.textContent = "Letter";
+      equationDisplay.textContent = letterFor(currentPos);
+    } else {
+      promptLabel.textContent = "Number";
+      equationDisplay.textContent = currentPos;
+    }
+
+    numAnswerInput.value = "";
+    letAnswerInput.value = "";
+    feedback.textContent = "\u00A0";
+    feedback.className = "feedback";
+    checkBtn.disabled = false;
+    activeInput().disabled = false;
+    awaitingNext = false;
+    activeInput().focus();
+    startCountdown();
+  }
+
+  function updateStreakLine() {
+    streakLine.innerHTML = streak >= 2 ? "Streak: <b>" + streak + "</b> in a row" : "\u00A0";
+  }
+
+  function startGame(selectedMode) {
+    mode = selectedMode;
+    questionQueue = buildQueue();
+    queueIndex = 0;
+
+    score = 0;
+    correctCount = 0;
+    incorrectCount = 0;
+    streak = 0;
+    sessionBestStreak = 0;
+    startTime = Date.now();
+    scoreDisplay.textContent = "0";
+    liveHighScore.textContent = highScores[mode];
+    updateStreakLine();
+
+    numAnswerInput.style.display = mode === "a2n" ? "" : "none";
+    letAnswerInput.style.display = mode === "n2a" ? "" : "none";
+
+    startView.classList.add("hidden");
+    summaryView.classList.remove("active");
+    gameView.classList.add("active");
+
+    newQuestion();
+  }
+
+  function isAnswerCorrect(given) {
+    if (mode === "a2n") {
+      return given !== null && given === currentPos;
+    }
+    return typeof given === "string" && given.trim().toUpperCase() === letterFor(currentPos);
+  }
+
+  function correctAnswerText() {
+    return mode === "a2n" ? String(currentPos) : letterFor(currentPos);
+  }
+
+  function finishAnswer(isCorrect, hadAnswer) {
+    stopCountdown();
+    awaitingNext = true;
+    checkBtn.disabled = true;
+    activeInput().disabled = true;
+
+    if (isCorrect) {
+      score += CORRECT_POINTS;
+      correctCount += 1;
+      streak += 1;
+      if (streak > sessionBestStreak) sessionBestStreak = streak;
+      feedback.textContent = "Correct — +" + CORRECT_POINTS;
+      feedback.className = "feedback correct";
+    } else {
+      score = Math.max(0, score + INCORRECT_POINTS);
+      incorrectCount += 1;
+      streak = 0;
+      if (!hadAnswer) {
+        feedback.textContent = "Time's up — it's " + correctAnswerText() + " (" + INCORRECT_POINTS + ")";
+      } else {
+        feedback.textContent = "Not quite — it's " + correctAnswerText() + " (" + INCORRECT_POINTS + ")";
+      }
+      feedback.className = "feedback incorrect";
+    }
+
+    scoreDisplay.textContent = score;
+    if (score > highScores[mode]) liveHighScore.textContent = score;
+    updateStreakLine();
+
+    advanceTimer = setTimeout(newQuestion, isCorrect ? 700 : 1400);
+  }
+
+  function handleTimeout() {
+    if (awaitingNext) return;
+    finishAnswer(false, false);
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (awaitingNext) return;
+
+    if (mode === "a2n") {
+      const raw = numAnswerInput.value;
+      if (raw === "") return;
+      const given = parseInt(raw, 10);
+      finishAnswer(isAnswerCorrect(given), true);
+    } else {
+      const raw = letAnswerInput.value;
+      if (raw.trim() === "") return;
+      finishAnswer(isAnswerCorrect(raw), true);
+    }
+  }
+
+  function endGame(completed) {
+    if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null; }
+    stopCountdown();
+
+    gameView.classList.remove("active");
+    summaryView.classList.add("active");
+
+    const elapsedMs = completed ? (Date.now() - startTime) : null;
+
+    let isNewBest = false;
+    if (score > highScores[mode]) {
+      highScores[mode] = score;
+      saveNumber(KEYS[mode].high, score);
+      isNewBest = true;
+    }
+    if (sessionBestStreak > bestStreaks[mode]) {
+      bestStreaks[mode] = sessionBestStreak;
+      saveNumber(KEYS[mode].streak, sessionBestStreak);
+    }
+
+    let isNewBestTime = false;
+    if (completed && (bestTimes[mode] <= 0 || elapsedMs < bestTimes[mode])) {
+      bestTimes[mode] = elapsedMs;
+      saveNumber(KEYS[mode].time, elapsedMs);
+      isNewBestTime = true;
+    }
+
+    summaryHeading.textContent = completed ? "Round complete" : "Game over";
+    summarySub.textContent = completed
+      ? "You've been through all 26 letters."
+      : "You ended the round early.";
+
+    finalScore.textContent = score;
+    finalTime.textContent = completed ? formatTime(elapsedMs) : "\u2013";
+    finalCorrect.textContent = correctCount;
+    finalIncorrect.textContent = incorrectCount;
+    finalStreak.textContent = sessionBestStreak;
+    finalBestTime.textContent = formatTime(bestTimes[mode]);
+    newBestBadge.style.display = isNewBest ? "inline-block" : "none";
+    newBestTimeBadge.style.display = isNewBestTime ? "inline-block" : "none";
+
+    refreshStartStats();
+  }
+
+  modeA2N.addEventListener("click", function () { startGame("a2n"); });
+  modeN2A.addEventListener("click", function () { startGame("n2a"); });
+
+  playAgainBtn.addEventListener("click", function () { startGame(mode); });
+  changeModeBtn.addEventListener("click", function () {
+    summaryView.classList.remove("active");
+    startView.classList.remove("hidden");
+  });
+  endBtn.addEventListener("click", function () { endGame(false); });
+  answerForm.addEventListener("submit", handleSubmit);
+
+  refreshStartStats();
+})();
+</script>
+
+</body>
+</html>
