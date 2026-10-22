@@ -213,7 +213,7 @@
           <span class="mode-text">
             <span class="mode-title">Alphabet &rarr; Number</span>
             <span class="mode-sub">See "P", type 16</span>
-            <span class="mode-avg" id="a2nAvg">Avg of last 5: &ndash;</span>
+            <span class="mode-avg" id="a2nAvg">Avg of last 5 bests: &ndash;</span>
           </span>
           <span class="mode-stats">
             <span class="mini-stat">
@@ -230,7 +230,7 @@
           <span class="mode-text">
             <span class="mode-title">Number &rarr; Alphabet</span>
             <span class="mode-sub">See "16", type P</span>
-            <span class="mode-avg" id="n2aAvg">Avg of last 5: &ndash;</span>
+            <span class="mode-avg" id="n2aAvg">Avg of last 5 bests: &ndash;</span>
           </span>
           <span class="mode-stats">
             <span class="mini-stat">
@@ -318,11 +318,11 @@
           <div class="stat-value" id="finalBestTime">&ndash;</div>
         </div>
         <div class="stat-box">
-          <div class="stat-label">Avg score (last 5)</div>
+          <div class="stat-label">Avg best score (last 5)</div>
           <div class="stat-value" id="finalAvgScore">&ndash;</div>
         </div>
         <div class="stat-box">
-          <div class="stat-label">Avg time (last 5)</div>
+          <div class="stat-label">Avg best time (last 5)</div>
           <div class="stat-value" id="finalAvgTime">&ndash;</div>
         </div>
       </div>
@@ -351,7 +351,7 @@
   const QUESTION_SECONDS = 10;
   const CORRECT_POINTS = 10;
   const INCORRECT_POINTS = -4;
-  const RECENT_MAX = 5; // how many recent completed rounds feed the "last 5" average
+  const REC_MAX = 5; // how many of your most recent personal bests feed the "last 5 bests" average
 
   const KEYS = {
     a2n: { high: "az_a2n_highScore", streak: "az_a2n_bestStreak", time: "az_a2n_bestTimeMs" },
@@ -370,40 +370,54 @@
     if (window.cloudSave) window.cloudSave();
   }
 
-  // Rolling history of the last completed rounds (newest first). Stored as plain numeric keys
-  // so the cloud sync can carry them:
-  //   az_<mode>_recentCount, az_<mode>_recentStamp, az_<mode>_recentScore0-4, az_<mode>_recentTimeMs0-4
-  function loadRecent(m) {
-    const count = Math.min(RECENT_MAX, Math.max(0, loadNumber("az_" + m + "_recentCount")));
+  // Rolling history of your last 5 personal BESTS (newest first), kept separately for best scores and
+  // best times, per mode. Stored as plain numeric keys so the cloud sync can carry them:
+  //   az_<mode>_recScoreCount / recScoreStamp / recScore0-4
+  //   az_<mode>_recTimeCount  / recTimeStamp  / recTimeMs0-4
+  const REC = {
+    score: { count: "recScoreCount", stamp: "recScoreStamp", slot: "recScore" },
+    time:  { count: "recTimeCount",  stamp: "recTimeStamp",  slot: "recTimeMs" }
+  };
+  function loadRecordList(m, kind) {
+    const c = REC[kind];
+    const count = Math.min(REC_MAX, Math.max(0, loadNumber("az_" + m + "_" + c.count)));
     const list = [];
-    for (let i = 0; i < count; i++) {
-      list.push({
-        score: loadNumber("az_" + m + "_recentScore" + i),
-        timeMs: loadNumber("az_" + m + "_recentTimeMs" + i)
-      });
-    }
+    for (let i = 0; i < count; i++) list.push(loadNumber("az_" + m + "_" + c.slot + i));
     return list;
   }
-  function saveRecent(m, list) {
-    saveNumber("az_" + m + "_recentCount", list.length);
-    saveNumber("az_" + m + "_recentStamp", Date.now());
-    for (let i = 0; i < RECENT_MAX; i++) {
-      const item = list[i];
-      saveNumber("az_" + m + "_recentScore" + i, item ? item.score : 0);
-      saveNumber("az_" + m + "_recentTimeMs" + i, item ? item.timeMs : 0);
-    }
+  function saveRecordList(m, kind, list) {
+    const c = REC[kind];
+    saveNumber("az_" + m + "_" + c.count, list.length);
+    saveNumber("az_" + m + "_" + c.stamp, Date.now());
+    for (let i = 0; i < REC_MAX; i++) saveNumber("az_" + m + "_" + c.slot + i, i < list.length ? list[i] : 0);
   }
-  function averages(list) {
+  function avg(list) {
     if (!list || !list.length) return null;
-    let s = 0, t = 0;
-    list.forEach(function (r) { s += r.score; t += r.timeMs; });
-    return { score: s / list.length, timeMs: t / list.length, n: list.length };
+    let t = 0;
+    list.forEach(function (v) { t += v; });
+    return t / list.length;
   }
+
+  // The earlier "last 5 rounds" keys are no longer used; tidy them out of this browser.
+  try {
+    Object.keys(localStorage).forEach(function (k) {
+      if (/^az_(a2n|n2a)_recent/.test(k)) localStorage.removeItem(k);
+    });
+  } catch (e) { /* storage unavailable */ }
 
   let highScores = { a2n: loadNumber(KEYS.a2n.high), n2a: loadNumber(KEYS.n2a.high) };
   let bestStreaks = { a2n: loadNumber(KEYS.a2n.streak), n2a: loadNumber(KEYS.n2a.streak) };
   let bestTimes = { a2n: loadNumber(KEYS.a2n.time), n2a: loadNumber(KEYS.n2a.time) };
-  let recent = { a2n: loadRecent("a2n"), n2a: loadRecent("n2a") };
+
+  // Existing players: if no history is saved yet, start from the current best so the average has a target.
+  function loadRecords(m) {
+    let scores = loadRecordList(m, "score");
+    let times = loadRecordList(m, "time");
+    if (!scores.length && highScores[m] > 0) scores = [highScores[m]];
+    if (!times.length && bestTimes[m] > 0) times = [bestTimes[m]];
+    return { score: scores, time: times };
+  }
+  let records = { a2n: loadRecords("a2n"), n2a: loadRecords("n2a") };
 
   function formatTime(ms) {
     if (ms === null || ms === undefined || ms <= 0) return "\u2013";
@@ -487,12 +501,12 @@
 
   function letterFor(pos) { return String.fromCharCode(64 + pos); } // 1 -> A
 
-  function avgLabel(a) { return a.n === 1 ? "Last round" : "Avg of last " + a.n; }
-
   function avgHtml(m) {
-    const a = averages(recent[m]);
-    if (!a) return "Avg of last 5: \u2013";
-    return avgLabel(a) + ": <b>" + Math.round(a.score) + "</b> pts \u00b7 <b>" + formatTime(a.timeMs) + "</b>";
+    const sAvg = avg(records[m].score);
+    const tAvg = avg(records[m].time);
+    if (sAvg === null && tAvg === null) return "Avg of last 5 bests: \u2013";
+    const scorePart = sAvg === null ? "<b>\u2013</b>" : "<b>" + Math.round(sAvg) + "</b> pts";
+    return "Avg of last 5 bests: " + scorePart + " \u00b7 <b>" + formatTime(tAvg === null ? 0 : tAvg) + "</b>";
   }
 
   function refreshStartStats() {
@@ -726,6 +740,10 @@
 
     const elapsedMs = completed ? elapsedNow() : null;
 
+    // Snapshot the best-5 averages BEFORE this round so we can compare against them.
+    const prevScoreAvg = avg(records[mode].score);
+    const prevTimeAvg = avg(records[mode].time);
+
     let isNewBest = false;
     if (score > highScores[mode]) {
       highScores[mode] = score;
@@ -744,27 +762,34 @@
       isNewBestTime = true;
     }
 
-    // Compare against the average from BEFORE this round, then fold this round in.
-    const prevAvg = averages(recent[mode]);
-    if (completed) {
-      recent[mode] = [{ score: score, timeMs: elapsedMs }].concat(recent[mode]).slice(0, RECENT_MAX);
-      saveRecent(mode, recent[mode]);
+    // A new record joins the rolling "last 5 bests" lists (newest first).
+    if (isNewBest) {
+      records[mode].score = [score].concat(records[mode].score).slice(0, REC_MAX);
+      saveRecordList(mode, "score", records[mode].score);
     }
-    const newAvg = averages(recent[mode]);
+    if (isNewBestTime) {
+      records[mode].time = [elapsedMs].concat(records[mode].time).slice(0, REC_MAX);
+      saveRecordList(mode, "time", records[mode].time);
+    }
+    const newScoreAvg = avg(records[mode].score);
+    const newTimeAvg = avg(records[mode].time);
 
-    if (!completed) {
-      summaryDelta.textContent = "Finish a full round to add it to your last-5 average.";
-    } else if (!prevAvg) {
-      summaryDelta.textContent = "First completed round \u2014 this starts your last-5 average.";
+    const parts = [];
+    if (prevScoreAvg !== null) {
+      const ds = Math.round(score - prevScoreAvg);
+      parts.push("score " + (ds > 0 ? "+" : "") + ds);
+    }
+    if (completed && prevTimeAvg !== null) {
+      const dt = elapsedMs - prevTimeAvg;
+      parts.push(Math.abs(dt) < 50 ? "time on your average"
+        : "time " + deltaText(dt) + (dt < 0 ? " faster" : " slower"));
+    }
+    if (parts.length) {
+      summaryDelta.textContent = "vs your best-5 average: " + parts.join(", ") + ".";
+    } else if (isNewBest || isNewBestTime) {
+      summaryDelta.textContent = "First record \u2014 this starts your best-5 average.";
     } else {
-      const dt = elapsedMs - prevAvg.timeMs;
-      const ds = score - prevAvg.score;
-      const timePart = Math.abs(dt) < 50 ? "time on your average"
-        : "time " + deltaText(dt) + (dt < 0 ? " faster" : " slower");
-      const dsRounded = Math.round(ds);
-      const scorePart = "score " + (dsRounded > 0 ? "+" : "") + dsRounded;
-      summaryDelta.textContent = "vs your " + (prevAvg.n === 1 ? "last round" : "last-" + prevAvg.n + " average") +
-        ": " + timePart + ", " + scorePart + ".";
+      summaryDelta.textContent = "Set a new best to start your best-5 average.";
     }
 
     summaryHeading.textContent = completed ? "Round complete" : "Game over";
@@ -778,8 +803,8 @@
     finalIncorrect.textContent = incorrectCount;
     finalStreak.textContent = sessionBestStreak;
     finalBestTime.textContent = formatTime(bestTimes[mode]);
-    finalAvgScore.textContent = newAvg ? Math.round(newAvg.score) : "\u2013";
-    finalAvgTime.textContent = newAvg ? formatTime(newAvg.timeMs) : "\u2013";
+    finalAvgScore.textContent = newScoreAvg === null ? "\u2013" : Math.round(newScoreAvg);
+    finalAvgTime.textContent = newTimeAvg === null ? "\u2013" : formatTime(newTimeAvg);
     newBestBadge.style.display = isNewBest ? "inline-block" : "none";
     newBestTimeBadge.style.display = isNewBestTime ? "inline-block" : "none";
 
@@ -813,7 +838,7 @@
       highScores = { a2n: loadNumber(KEYS.a2n.high), n2a: loadNumber(KEYS.n2a.high) };
       bestStreaks = { a2n: loadNumber(KEYS.a2n.streak), n2a: loadNumber(KEYS.n2a.streak) };
       bestTimes = { a2n: loadNumber(KEYS.a2n.time), n2a: loadNumber(KEYS.n2a.time) };
-      recent = { a2n: loadRecent("a2n"), n2a: loadRecent("n2a") };
+      records = { a2n: loadRecords("a2n"), n2a: loadRecords("n2a") };
       refreshStartStats();
     }
   };
@@ -878,15 +903,21 @@
 
   // Keep the best of both sides. Scores/streaks: higher wins.
   // Best times (…_bestTimeMs): lower wins, and 0 means "no time yet".
-  // The rolling "last 5 rounds" history can't be merged key-by-key (max/min would scramble it),
-  // so each mode's whole history is taken from whichever side was updated most recently.
-  const RECENT_RE = /^az_(a2n|n2a)_recent/;
+  // Old "last 5 rounds" keys are no longer used and are ignored. The rolling "last 5 bests" lists can't be
+  // merged key-by-key (max/min would scramble them), so each list is taken whole from whichever side
+  // was updated most recently.
+  const LEGACY_RE = /^az_(a2n|n2a)_recent/;
+  const RECORD_RE = /^az_(a2n|n2a)_rec(Score|Time)/;
+  const RECORD_GROUPS = [
+    { count: "recScoreCount", stamp: "recScoreStamp", slot: "recScore" },
+    { count: "recTimeCount",  stamp: "recTimeStamp",  slot: "recTimeMs" }
+  ];
   function merge(a, b) {
     a = a || {}; b = b || {};
     const out = {};
     new Set([...Object.keys(a), ...Object.keys(b)]).forEach(function (k) {
       if (!k.startsWith(PREFIX)) return;
-      if (RECENT_RE.test(k)) return; // handled as a group below
+      if (LEGACY_RE.test(k) || RECORD_RE.test(k)) return; // legacy ignored; records handled as groups below
       const x = num(a[k]), y = num(b[k]);
       if (k.endsWith("_bestTimeMs")) {
         out[k] = x > 0 && y > 0 ? Math.min(x, y) : Math.max(x, y);
@@ -895,14 +926,14 @@
       }
     });
     ["a2n", "n2a"].forEach(function (m) {
-      const stampKey = PREFIX + m + "_recentStamp";
-      if (!num(a[stampKey]) && !num(b[stampKey])) return; // no history on either side
-      const src = num(a[stampKey]) >= num(b[stampKey]) ? a : b;
-      const keys = [PREFIX + m + "_recentCount", stampKey];
-      for (let i = 0; i < 5; i++) {
-        keys.push(PREFIX + m + "_recentScore" + i, PREFIX + m + "_recentTimeMs" + i);
-      }
-      keys.forEach(function (k) { out[k] = num(src[k]); });
+      RECORD_GROUPS.forEach(function (g) {
+        const stampKey = PREFIX + m + "_" + g.stamp;
+        if (!num(a[stampKey]) && !num(b[stampKey])) return; // no history on either side
+        const src = num(a[stampKey]) >= num(b[stampKey]) ? a : b;
+        const keys = [PREFIX + m + "_" + g.count, stampKey];
+        for (let i = 0; i < 5; i++) keys.push(PREFIX + m + "_" + g.slot + i);
+        keys.forEach(function (k) { out[k] = num(src[k]); });
+      });
     });
     return out;
   }
