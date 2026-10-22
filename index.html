@@ -70,7 +70,7 @@
   .mode-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 4px; }
   .mode-btn {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    text-align: left; width: 100%; background: var(--bg-deep);
+    text-align: left; width: 100%; background: var(--bg-deep); color: var(--ink);
     border: 1.5px solid var(--panel-line); border-radius: 16px;
     padding: 16px 18px; transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
   }
@@ -91,6 +91,9 @@
 
   .timer-note { color: var(--muted); font-size: 13px; margin-top: 22px; text-align: center; }
   .timer-note b { color: var(--ink); font-weight: 600; }
+
+  .mode-btn .mode-text .mode-avg { display: block; color: var(--muted); font-size: 12px; margin-top: 8px; }
+  .mode-btn .mode-text .mode-avg b { color: var(--ink); font-weight: 600; }
 
   button { font-family: var(--font-body); cursor: pointer; border: none; outline-offset: 3px; background: none; }
 
@@ -159,6 +162,18 @@
     text-decoration: underline; text-underline-offset: 3px; padding: 6px;
   }
   .link-btn:hover { color: var(--ink); }
+  .end-row .link-btn + .link-btn { margin-left: 14px; }
+
+  .pause-overlay {
+    position: absolute; inset: 0; z-index: 5; background: var(--panel);
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 32px 28px; text-align: center;
+  }
+  .pause-overlay.active { display: flex; }
+  .pause-overlay h2 { font-family: var(--font-display); font-size: 28px; margin: 0; }
+  .pause-overlay p { color: var(--muted); font-size: 14px; line-height: 1.55; margin: 0 0 6px; max-width: 30ch; }
+
+  .summary-view .summary-delta { color: var(--ink); font-size: 14px; line-height: 1.5; margin: -6px 0 14px; }
 
   /* ---------- Summary screen ---------- */
   .summary-view { display: none; }
@@ -198,6 +213,7 @@
           <span class="mode-text">
             <span class="mode-title">Alphabet &rarr; Number</span>
             <span class="mode-sub">See "P", type 16</span>
+            <span class="mode-avg" id="a2nAvg">Avg of last 5: &ndash;</span>
           </span>
           <span class="mode-stats">
             <span class="mini-stat">
@@ -214,6 +230,7 @@
           <span class="mode-text">
             <span class="mode-title">Number &rarr; Alphabet</span>
             <span class="mode-sub">See "16", type P</span>
+            <span class="mode-avg" id="n2aAvg">Avg of last 5: &ndash;</span>
           </span>
           <span class="mode-stats">
             <span class="mini-stat">
@@ -260,7 +277,8 @@
       <div class="feedback" id="feedback">&nbsp;</div>
 
       <div class="end-row">
-        <button class="link-btn" id="endBtn">End game</button>
+        <button type="button" class="link-btn" id="pauseBtn">Pause</button>
+        <button type="button" class="link-btn" id="endBtn">End game</button>
       </div>
     </div>
 
@@ -268,6 +286,7 @@
     <div class="summary-view" id="summaryView">
       <h2 id="summaryHeading">Game over</h2>
       <p class="summary-sub" id="summarySub">You ended the round early.</p>
+      <p class="summary-delta" id="summaryDelta"></p>
       <div style="display:flex; gap: 8px; flex-wrap: wrap;">
         <div id="newBestBadge" style="display:none;" class="new-best">New high score</div>
         <div id="newBestTimeBadge" style="display:none;" class="new-best">New best time</div>
@@ -298,12 +317,28 @@
           <div class="stat-label">Best time</div>
           <div class="stat-value" id="finalBestTime">&ndash;</div>
         </div>
+        <div class="stat-box">
+          <div class="stat-label">Avg score (last 5)</div>
+          <div class="stat-value" id="finalAvgScore">&ndash;</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Avg time (last 5)</div>
+          <div class="stat-value" id="finalAvgTime">&ndash;</div>
+        </div>
       </div>
 
       <button class="btn-primary" id="playAgainBtn">Play again</button>
       <div class="end-row">
         <button class="link-btn" id="changeModeBtn">Change mode</button>
       </div>
+    </div>
+
+    <!-- PAUSE OVERLAY -->
+    <div class="pause-overlay" id="pauseOverlay" role="dialog" aria-label="Game paused">
+      <h2>Paused</h2>
+      <p>Your timers are stopped. Time spent paused doesn't count towards your completion time.</p>
+      <button type="button" class="btn-primary" id="resumeBtn">Resume</button>
+      <button type="button" class="link-btn" id="pauseEndBtn">End game</button>
     </div>
 
   </div>
@@ -316,6 +351,7 @@
   const QUESTION_SECONDS = 10;
   const CORRECT_POINTS = 10;
   const INCORRECT_POINTS = -4;
+  const RECENT_MAX = 5; // how many recent completed rounds feed the "last 5" average
 
   const KEYS = {
     a2n: { high: "az_a2n_highScore", streak: "az_a2n_bestStreak", time: "az_a2n_bestTimeMs" },
@@ -334,9 +370,40 @@
     if (window.cloudSave) window.cloudSave();
   }
 
+  // Rolling history of the last completed rounds (newest first). Stored as plain numeric keys
+  // so the cloud sync can carry them:
+  //   az_<mode>_recentCount, az_<mode>_recentStamp, az_<mode>_recentScore0-4, az_<mode>_recentTimeMs0-4
+  function loadRecent(m) {
+    const count = Math.min(RECENT_MAX, Math.max(0, loadNumber("az_" + m + "_recentCount")));
+    const list = [];
+    for (let i = 0; i < count; i++) {
+      list.push({
+        score: loadNumber("az_" + m + "_recentScore" + i),
+        timeMs: loadNumber("az_" + m + "_recentTimeMs" + i)
+      });
+    }
+    return list;
+  }
+  function saveRecent(m, list) {
+    saveNumber("az_" + m + "_recentCount", list.length);
+    saveNumber("az_" + m + "_recentStamp", Date.now());
+    for (let i = 0; i < RECENT_MAX; i++) {
+      const item = list[i];
+      saveNumber("az_" + m + "_recentScore" + i, item ? item.score : 0);
+      saveNumber("az_" + m + "_recentTimeMs" + i, item ? item.timeMs : 0);
+    }
+  }
+  function averages(list) {
+    if (!list || !list.length) return null;
+    let s = 0, t = 0;
+    list.forEach(function (r) { s += r.score; t += r.timeMs; });
+    return { score: s / list.length, timeMs: t / list.length, n: list.length };
+  }
+
   let highScores = { a2n: loadNumber(KEYS.a2n.high), n2a: loadNumber(KEYS.n2a.high) };
   let bestStreaks = { a2n: loadNumber(KEYS.a2n.streak), n2a: loadNumber(KEYS.n2a.streak) };
   let bestTimes = { a2n: loadNumber(KEYS.a2n.time), n2a: loadNumber(KEYS.n2a.time) };
+  let recent = { a2n: loadRecent("a2n"), n2a: loadRecent("n2a") };
 
   function formatTime(ms) {
     if (ms === null || ms === undefined || ms <= 0) return "\u2013";
@@ -355,6 +422,8 @@
   const n2aHigh = document.getElementById("n2aHigh");
   const a2nBestTime = document.getElementById("a2nBestTime");
   const n2aBestTime = document.getElementById("n2aBestTime");
+  const a2nAvg = document.getElementById("a2nAvg");
+  const n2aAvg = document.getElementById("n2aAvg");
   const modeA2N = document.getElementById("modeA2N");
   const modeN2A = document.getElementById("modeN2A");
 
@@ -370,7 +439,11 @@
   const checkBtn = document.getElementById("checkBtn");
   const timerFill = document.getElementById("timerFill");
 
+  const pauseBtn = document.getElementById("pauseBtn");
   const endBtn = document.getElementById("endBtn");
+  const pauseOverlay = document.getElementById("pauseOverlay");
+  const resumeBtn = document.getElementById("resumeBtn");
+  const pauseEndBtn = document.getElementById("pauseEndBtn");
   const playAgainBtn = document.getElementById("playAgainBtn");
   const changeModeBtn = document.getElementById("changeModeBtn");
 
@@ -380,10 +453,13 @@
   const finalIncorrect = document.getElementById("finalIncorrect");
   const finalStreak = document.getElementById("finalStreak");
   const finalBestTime = document.getElementById("finalBestTime");
+  const finalAvgScore = document.getElementById("finalAvgScore");
+  const finalAvgTime = document.getElementById("finalAvgTime");
   const newBestBadge = document.getElementById("newBestBadge");
   const newBestTimeBadge = document.getElementById("newBestTimeBadge");
   const summaryHeading = document.getElementById("summaryHeading");
   const summarySub = document.getElementById("summarySub");
+  const summaryDelta = document.getElementById("summaryDelta");
 
   let mode = "a2n";
   let score = 0;
@@ -395,19 +471,37 @@
   let startTime = 0;
   let awaitingNext = false;
   let advanceTimer = null;
+  let advanceDueAt = 0;
   let countdownInterval = null;
   let timeLeft = QUESTION_SECONDS;
+
+  // Pause state. Paused time is tracked so it never counts towards the completion time.
+  let paused = false;
+  let pauseStartedAt = 0;
+  let pausedTotalMs = 0;
+  let pendingAdvance = false;
+  let advanceRemaining = 0;
 
   let questionQueue = [];
   let queueIndex = 0;
 
   function letterFor(pos) { return String.fromCharCode(64 + pos); } // 1 -> A
 
+  function avgLabel(a) { return a.n === 1 ? "Last round" : "Avg of last " + a.n; }
+
+  function avgHtml(m) {
+    const a = averages(recent[m]);
+    if (!a) return "Avg of last 5: \u2013";
+    return avgLabel(a) + ": <b>" + Math.round(a.score) + "</b> pts \u00b7 <b>" + formatTime(a.timeMs) + "</b>";
+  }
+
   function refreshStartStats() {
     a2nHigh.textContent = highScores.a2n;
     n2aHigh.textContent = highScores.n2a;
     a2nBestTime.textContent = formatTime(bestTimes.a2n);
     n2aBestTime.textContent = formatTime(bestTimes.n2a);
+    a2nAvg.innerHTML = avgHtml("a2n");
+    n2aAvg.innerHTML = avgHtml("n2a");
   }
 
   function shuffle(arr) {
@@ -424,15 +518,24 @@
     return shuffle(list);
   }
 
+  // Elapsed round time, excluding anything spent paused.
+  function elapsedNow() {
+    const now = paused ? pauseStartedAt : Date.now();
+    return Math.max(0, now - startTime - pausedTotalMs);
+  }
+
   function stopCountdown() {
     if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
   }
 
-  function startCountdown() {
+  // resume=true keeps the time that was left on the question instead of resetting it.
+  function startCountdown(resume) {
     stopCountdown();
-    timeLeft = QUESTION_SECONDS;
-    timerFill.style.width = "100%";
-    timerFill.classList.remove("urgent");
+    if (!resume) {
+      timeLeft = QUESTION_SECONDS;
+      timerFill.classList.remove("urgent");
+    }
+    timerFill.style.width = Math.max(0, (timeLeft / QUESTION_SECONDS) * 100) + "%";
     countdownInterval = setInterval(function () {
       timeLeft -= 0.1;
       const pct = Math.max(0, (timeLeft / QUESTION_SECONDS) * 100);
@@ -443,6 +546,11 @@
         handleTimeout();
       }
     }, 100);
+  }
+
+  function scheduleAdvance(delay) {
+    advanceDueAt = Date.now() + delay;
+    advanceTimer = setTimeout(function () { advanceTimer = null; newQuestion(); }, delay);
   }
 
   function activeInput() { return mode === "a2n" ? numAnswerInput : letAnswerInput; }
@@ -471,11 +579,40 @@
     activeInput().disabled = false;
     awaitingNext = false;
     activeInput().focus();
-    startCountdown();
+    startCountdown(false);
   }
 
   function updateStreakLine() {
     streakLine.innerHTML = streak >= 2 ? "Streak: <b>" + streak + "</b> in a row" : "\u00A0";
+  }
+
+  function pauseGame() {
+    if (paused || !gameView.classList.contains("active")) return;
+    paused = true;
+    pauseStartedAt = Date.now();
+    stopCountdown();
+    if (advanceTimer) {
+      clearTimeout(advanceTimer);
+      advanceTimer = null;
+      advanceRemaining = Math.max(0, advanceDueAt - pauseStartedAt);
+      pendingAdvance = true;
+    }
+    pauseOverlay.classList.add("active");
+    resumeBtn.focus();
+  }
+
+  function resumeGame() {
+    if (!paused) return;
+    pausedTotalMs += Date.now() - pauseStartedAt;
+    paused = false;
+    pauseOverlay.classList.remove("active");
+    if (pendingAdvance) {
+      pendingAdvance = false;
+      scheduleAdvance(advanceRemaining);
+    } else if (!awaitingNext) {
+      startCountdown(true);
+      activeInput().focus();
+    }
   }
 
   function startGame(selectedMode) {
@@ -488,6 +625,10 @@
     incorrectCount = 0;
     streak = 0;
     sessionBestStreak = 0;
+    paused = false;
+    pausedTotalMs = 0;
+    pendingAdvance = false;
+    pauseOverlay.classList.remove("active");
     startTime = Date.now();
     scoreDisplay.textContent = "0";
     liveHighScore.textContent = highScores[mode];
@@ -543,17 +684,17 @@
     if (score > highScores[mode]) liveHighScore.textContent = score;
     updateStreakLine();
 
-    advanceTimer = setTimeout(newQuestion, isCorrect ? 700 : 1400);
+    scheduleAdvance(isCorrect ? 700 : 1400);
   }
 
   function handleTimeout() {
-    if (awaitingNext) return;
+    if (awaitingNext || paused) return;
     finishAnswer(false, false);
   }
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (awaitingNext) return;
+    if (awaitingNext || paused) return;
 
     if (mode === "a2n") {
       const raw = numAnswerInput.value;
@@ -567,14 +708,23 @@
     }
   }
 
+  function deltaText(ms) { return (Math.abs(ms) / 1000).toFixed(1) + "s"; }
+
   function endGame(completed) {
     if (advanceTimer) { clearTimeout(advanceTimer); advanceTimer = null; }
     stopCountdown();
 
+    // Leaving while paused: close the overlay and discard the pause (an early end has no completion time anyway).
+    if (paused) {
+      paused = false;
+      pendingAdvance = false;
+      pauseOverlay.classList.remove("active");
+    }
+
     gameView.classList.remove("active");
     summaryView.classList.add("active");
 
-    const elapsedMs = completed ? (Date.now() - startTime) : null;
+    const elapsedMs = completed ? elapsedNow() : null;
 
     let isNewBest = false;
     if (score > highScores[mode]) {
@@ -594,6 +744,29 @@
       isNewBestTime = true;
     }
 
+    // Compare against the average from BEFORE this round, then fold this round in.
+    const prevAvg = averages(recent[mode]);
+    if (completed) {
+      recent[mode] = [{ score: score, timeMs: elapsedMs }].concat(recent[mode]).slice(0, RECENT_MAX);
+      saveRecent(mode, recent[mode]);
+    }
+    const newAvg = averages(recent[mode]);
+
+    if (!completed) {
+      summaryDelta.textContent = "Finish a full round to add it to your last-5 average.";
+    } else if (!prevAvg) {
+      summaryDelta.textContent = "First completed round \u2014 this starts your last-5 average.";
+    } else {
+      const dt = elapsedMs - prevAvg.timeMs;
+      const ds = score - prevAvg.score;
+      const timePart = Math.abs(dt) < 50 ? "time on your average"
+        : "time " + deltaText(dt) + (dt < 0 ? " faster" : " slower");
+      const dsRounded = Math.round(ds);
+      const scorePart = "score " + (dsRounded > 0 ? "+" : "") + dsRounded;
+      summaryDelta.textContent = "vs your " + (prevAvg.n === 1 ? "last round" : "last-" + prevAvg.n + " average") +
+        ": " + timePart + ", " + scorePart + ".";
+    }
+
     summaryHeading.textContent = completed ? "Round complete" : "Game over";
     summarySub.textContent = completed
       ? "You've been through all 26 letters."
@@ -605,6 +778,8 @@
     finalIncorrect.textContent = incorrectCount;
     finalStreak.textContent = sessionBestStreak;
     finalBestTime.textContent = formatTime(bestTimes[mode]);
+    finalAvgScore.textContent = newAvg ? Math.round(newAvg.score) : "\u2013";
+    finalAvgTime.textContent = newAvg ? formatTime(newAvg.timeMs) : "\u2013";
     newBestBadge.style.display = isNewBest ? "inline-block" : "none";
     newBestTimeBadge.style.display = isNewBestTime ? "inline-block" : "none";
 
@@ -619,8 +794,18 @@
     summaryView.classList.remove("active");
     startView.classList.remove("hidden");
   });
+  pauseBtn.addEventListener("click", pauseGame);
+  resumeBtn.addEventListener("click", resumeGame);
   endBtn.addEventListener("click", function () { endGame(false); });
+  pauseEndBtn.addEventListener("click", function () { endGame(false); });
   answerForm.addEventListener("submit", handleSubmit);
+
+  // Escape toggles pause while a round is running.
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && gameView.classList.contains("active")) {
+      if (paused) resumeGame(); else pauseGame();
+    }
+  });
 
   // Lets the Firebase sync code reload scores (kept in memory above) after cloud data arrives.
   window.alphabetGame = {
@@ -628,6 +813,7 @@
       highScores = { a2n: loadNumber(KEYS.a2n.high), n2a: loadNumber(KEYS.n2a.high) };
       bestStreaks = { a2n: loadNumber(KEYS.a2n.streak), n2a: loadNumber(KEYS.n2a.streak) };
       bestTimes = { a2n: loadNumber(KEYS.a2n.time), n2a: loadNumber(KEYS.n2a.time) };
+      recent = { a2n: loadRecent("a2n"), n2a: loadRecent("n2a") };
       refreshStartStats();
     }
   };
@@ -692,17 +878,31 @@
 
   // Keep the best of both sides. Scores/streaks: higher wins.
   // Best times (…_bestTimeMs): lower wins, and 0 means "no time yet".
+  // The rolling "last 5 rounds" history can't be merged key-by-key (max/min would scramble it),
+  // so each mode's whole history is taken from whichever side was updated most recently.
+  const RECENT_RE = /^az_(a2n|n2a)_recent/;
   function merge(a, b) {
     a = a || {}; b = b || {};
     const out = {};
     new Set([...Object.keys(a), ...Object.keys(b)]).forEach(function (k) {
       if (!k.startsWith(PREFIX)) return;
+      if (RECENT_RE.test(k)) return; // handled as a group below
       const x = num(a[k]), y = num(b[k]);
       if (k.endsWith("_bestTimeMs")) {
         out[k] = x > 0 && y > 0 ? Math.min(x, y) : Math.max(x, y);
       } else {
         out[k] = Math.max(x, y);
       }
+    });
+    ["a2n", "n2a"].forEach(function (m) {
+      const stampKey = PREFIX + m + "_recentStamp";
+      if (!num(a[stampKey]) && !num(b[stampKey])) return; // no history on either side
+      const src = num(a[stampKey]) >= num(b[stampKey]) ? a : b;
+      const keys = [PREFIX + m + "_recentCount", stampKey];
+      for (let i = 0; i < 5; i++) {
+        keys.push(PREFIX + m + "_recentScore" + i, PREFIX + m + "_recentTimeMs" + i);
+      }
+      keys.forEach(function (k) { out[k] = num(src[k]); });
     });
     return out;
   }
@@ -743,14 +943,22 @@
     refreshButtons();
   }
 
+  // IMPORTANT: don't call signInAnonymously() unconditionally at startup. Doing so on every page load
+  // replaced the restored Google session with a brand-new anonymous user (hence the repeated Google sign-in).
+  // onAuthStateChanged first fires once Firebase has restored any saved session, so we only create an
+  // anonymous account when it reports that nobody is signed in.
+  let anonAttempted = false;
   onAuthStateChanged(auth, function (user) {
     currentUser = user;
     refreshButtons();
-    if (user) syncDown(user);
-  });
-  signInAnonymously(auth).catch(function (e) {
-    console.error("Anonymous sign-in failed", e);
-    statusEl.textContent = "Cloud: sign-in failed (see console)";
+    if (user) { syncDown(user); return; }
+    if (!anonAttempted) {
+      anonAttempted = true;
+      signInAnonymously(auth).catch(function (e) {
+        console.error("Anonymous sign-in failed", e);
+        statusEl.textContent = "Cloud: sign-in failed (see console)";
+      });
+    }
   });
 
   // Upgrade the anonymous account to Google so scores follow you across devices.
