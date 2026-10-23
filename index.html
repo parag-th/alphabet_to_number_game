@@ -213,7 +213,7 @@
           <span class="mode-text">
             <span class="mode-title">Alphabet &rarr; Number</span>
             <span class="mode-sub">See "P", type 16</span>
-            <span class="mode-avg" id="a2nAvg">Avg of last 5 bests: &ndash;</span>
+            <span class="mode-avg" id="a2nAvg">Avg of top 5: &ndash;</span>
           </span>
           <span class="mode-stats">
             <span class="mini-stat">
@@ -230,7 +230,7 @@
           <span class="mode-text">
             <span class="mode-title">Number &rarr; Alphabet</span>
             <span class="mode-sub">See "16", type P</span>
-            <span class="mode-avg" id="n2aAvg">Avg of last 5 bests: &ndash;</span>
+            <span class="mode-avg" id="n2aAvg">Avg of top 5: &ndash;</span>
           </span>
           <span class="mode-stats">
             <span class="mini-stat">
@@ -318,11 +318,11 @@
           <div class="stat-value" id="finalBestTime">&ndash;</div>
         </div>
         <div class="stat-box">
-          <div class="stat-label">Avg best score (last 5)</div>
+          <div class="stat-label">Avg of top 5 scores</div>
           <div class="stat-value" id="finalAvgScore">&ndash;</div>
         </div>
         <div class="stat-box">
-          <div class="stat-label">Avg best time (last 5)</div>
+          <div class="stat-label">Avg of top 5 times</div>
           <div class="stat-value" id="finalAvgTime">&ndash;</div>
         </div>
       </div>
@@ -351,7 +351,7 @@
   const QUESTION_SECONDS = 10;
   const CORRECT_POINTS = 10;
   const INCORRECT_POINTS = -4;
-  const REC_MAX = 5; // how many of your most recent personal bests feed the "last 5 bests" average
+  const REC_MAX = 5; // the average is taken over your 5 best results (top 5 scores / 5 fastest times)
 
   const KEYS = {
     a2n: { high: "az_a2n_highScore", streak: "az_a2n_bestStreak", time: "az_a2n_bestTimeMs" },
@@ -370,8 +370,8 @@
     if (window.cloudSave) window.cloudSave();
   }
 
-  // Rolling history of your last 5 personal BESTS (newest first), kept separately for best scores and
-  // best times, per mode. Stored as plain numeric keys so the cloud sync can carry them:
+  // Your TOP 5 results, kept separately for scores (highest first) and times (fastest first), per mode.
+  // Every finished round competes for a place, so the list fills up as you play (not only on new records). Stored as plain numeric keys so the cloud sync can carry them:
   //   az_<mode>_recScoreCount / recScoreStamp / recScore0-4
   //   az_<mode>_recTimeCount  / recTimeStamp  / recTimeMs0-4
   const REC = {
@@ -383,7 +383,15 @@
     const count = Math.min(REC_MAX, Math.max(0, loadNumber("az_" + m + "_" + c.count)));
     const list = [];
     for (let i = 0; i < count; i++) list.push(loadNumber("az_" + m + "_" + c.slot + i));
-    return list;
+    return sortRecords(list, kind);
+  }
+  // scores: highest first; times: fastest first. Zero/empty slots are dropped.
+  function sortRecords(list, kind) {
+    return list.filter(function (v) { return v > 0; })
+      .sort(kind === "time" ? function (a, b) { return a - b; } : function (a, b) { return b - a; });
+  }
+  function addToTop(list, value, kind) {
+    return sortRecords(list.concat([value]), kind).slice(0, REC_MAX);
   }
   function saveRecordList(m, kind, list) {
     const c = REC[kind];
@@ -392,7 +400,8 @@
     for (let i = 0; i < REC_MAX; i++) saveNumber("az_" + m + "_" + c.slot + i, i < list.length ? list[i] : 0);
   }
   function avg(list) {
-    if (!list || !list.length) return null;
+    // Needs a full top 5. With fewer results the "average" would just equal your best.
+    if (!list || list.length < REC_MAX) return null;
     let t = 0;
     list.forEach(function (v) { t += v; });
     return t / list.length;
@@ -504,9 +513,12 @@
   function avgHtml(m) {
     const sAvg = avg(records[m].score);
     const tAvg = avg(records[m].time);
-    if (sAvg === null && tAvg === null) return "Avg of last 5 bests: \u2013";
+    if (sAvg === null && tAvg === null) {
+      const n = Math.min(records[m].score.length, records[m].time.length);
+      return "Avg of top 5: \u2013 (" + n + " of " + REC_MAX + " rounds)";
+    }
     const scorePart = sAvg === null ? "<b>\u2013</b>" : "<b>" + Math.round(sAvg) + "</b> pts";
-    return "Avg of last 5 bests: " + scorePart + " \u00b7 <b>" + formatTime(tAvg === null ? 0 : tAvg) + "</b>";
+    return "Avg of top 5: " + scorePart + " \u00b7 <b>" + formatTime(tAvg === null ? 0 : tAvg) + "</b>";
   }
 
   function refreshStartStats() {
@@ -762,14 +774,22 @@
       isNewBestTime = true;
     }
 
-    // A new record joins the rolling "last 5 bests" lists (newest first).
-    if (isNewBest) {
-      records[mode].score = [score].concat(records[mode].score).slice(0, REC_MAX);
-      saveRecordList(mode, "score", records[mode].score);
+    // Every finished round competes for a place in your top 5 (not only new records).
+    if (score > 0) {
+      const before = records[mode].score;
+      const after = addToTop(before, score, "score");
+      if (after.join() !== before.join()) {
+        records[mode].score = after;
+        saveRecordList(mode, "score", after);
+      }
     }
-    if (isNewBestTime) {
-      records[mode].time = [elapsedMs].concat(records[mode].time).slice(0, REC_MAX);
-      saveRecordList(mode, "time", records[mode].time);
+    if (completed && elapsedMs > 0) {
+      const before = records[mode].time;
+      const after = addToTop(before, elapsedMs, "time");
+      if (after.join() !== before.join()) {
+        records[mode].time = after;
+        saveRecordList(mode, "time", after);
+      }
     }
     const newScoreAvg = avg(records[mode].score);
     const newTimeAvg = avg(records[mode].time);
@@ -785,11 +805,12 @@
         : "time " + deltaText(dt) + (dt < 0 ? " faster" : " slower"));
     }
     if (parts.length) {
-      summaryDelta.textContent = "vs your best-5 average: " + parts.join(", ") + ".";
-    } else if (isNewBest || isNewBestTime) {
-      summaryDelta.textContent = "First record \u2014 this starts your best-5 average.";
+      summaryDelta.textContent = "vs your top-5 average: " + parts.join(", ") + ".";
     } else {
-      summaryDelta.textContent = "Set a new best to start your best-5 average.";
+      const left = Math.max(0, REC_MAX - Math.min(records[mode].score.length, records[mode].time.length));
+      summaryDelta.textContent = left > 0
+        ? "Complete " + left + " more round" + (left === 1 ? "" : "s") + " to unlock your top-5 averages."
+        : "Your top-5 averages are now unlocked.";
     }
 
     summaryHeading.textContent = completed ? "Round complete" : "Game over";
